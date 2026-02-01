@@ -119,7 +119,7 @@ async def notify(
         # Send via bot
         if bot:
             logger.info(f"Sending notification for session {request.session_id}")
-            message_id, thread_id = await bot.send_notification(
+            message_id, thread_id, chat_id = await bot.send_notification(
                 session_id=request.session_id,
                 status=request.status,
                 summary=request.summary,
@@ -127,8 +127,8 @@ async def notify(
                 buttons=request.buttons,
                 existing_thread_id=session.thread_id,
             )
-            store.update_thread_id(request.session_id, message_id, thread_id)
-            logger.info(f"Notification sent: message_id={message_id}, thread_id={thread_id}")
+            store.update_thread_id(request.session_id, message_id, thread_id, chat_id)
+            logger.info(f"Notification sent: message_id={message_id}, thread_id={thread_id}, chat_id={chat_id}")
             return NotifyResponse(
                 ok=True,
                 message_id=message_id,

@@ -47,6 +47,7 @@ class SessionStore:
         session_id: str,
         message_id: int,
         thread_id: int,
+        chat_id: int = 0,
     ) -> None:
         """Update session with thread info."""
         with self._lock:
@@ -54,6 +55,8 @@ class SessionStore:
             if session:
                 session.message_id = message_id
                 session.thread_id = thread_id
+                if chat_id:
+                    session.chat_id = chat_id
                 session.updated_at = datetime.now()
                 self._thread_to_session[thread_id] = session_id
 
@@ -105,12 +108,24 @@ class SessionStore:
         return removed
 
     def list_waiting_sessions(self, chat_id: int) -> List[SessionData]:
-        """List sessions waiting for reply."""
+        """List sessions waiting for reply.
+
+        Includes sessions with matching chat_id OR chat_id=0 (unassigned).
+        """
         with self._lock:
             return [
                 session for session in self._sessions.values()
-                if session.chat_id == chat_id and session.pending_reply is None
+                if (session.chat_id == chat_id or session.chat_id == 0)
+                and session.pending_reply is None
             ]
+
+    def update_chat_id(self, session_id: str, chat_id: int) -> None:
+        """Update session's chat_id."""
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if session and session.chat_id == 0:
+                session.chat_id = chat_id
+                session.updated_at = datetime.now()
 
     def delete_session(self, session_id: str) -> bool:
         """Delete a session."""

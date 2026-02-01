@@ -108,8 +108,8 @@ class TelegramNotifyBot:
         cwd: str,
         buttons: Optional[List[str]] = None,
         existing_thread_id: Optional[int] = None,
-    ) -> Tuple[int, int]:
-        """Send notification to Telegram. Returns (message_id, thread_id)."""
+    ) -> Tuple[int, int, int]:
+        """Send notification to Telegram. Returns (message_id, thread_id, chat_id)."""
         if not self.app:
             raise RuntimeError("Bot not initialized")
 
@@ -125,7 +125,7 @@ class TelegramNotifyBot:
                 reply_markup=keyboard,
                 reply_to_message_id=existing_thread_id,
             )
-            return msg.message_id, existing_thread_id
+            return msg.message_id, existing_thread_id, chat_id
         else:
             # Create new message (thread root)
             msg = await self.app.bot.send_message(
@@ -133,7 +133,7 @@ class TelegramNotifyBot:
                 text=message_text,
                 reply_markup=keyboard,
             )
-            return msg.message_id, msg.message_id
+            return msg.message_id, msg.message_id, chat_id
 
     async def send_ack(
         self,
@@ -174,7 +174,7 @@ class TelegramNotifyBot:
             session = self.store.get_session_by_thread(thread_id)
 
         if not session:
-            # Try to find any waiting session
+            # Try to find any waiting session (includes chat_id=0)
             waiting = self.store.list_waiting_sessions(chat_id)
             if waiting:
                 session = waiting[0]
@@ -183,6 +183,10 @@ class TelegramNotifyBot:
                     "⚠️ 没有找到等待中的任务。"
                 )
                 return
+
+        # Update chat_id if session was created with chat_id=0
+        if session.chat_id == 0:
+            self.store.update_chat_id(session.session_id, chat_id)
 
         # Parse and store reply
         text = update.message.text or ""
@@ -240,6 +244,10 @@ class TelegramNotifyBot:
                 query.message.text + "\n\n⚠️ Session 已过期"
             )
             return
+
+        # Update chat_id if session was created with chat_id=0
+        if session.chat_id == 0:
+            self.store.update_chat_id(session.session_id, chat_id)
 
         # Handle different callback types
         if data == "action:done" or data == "btn:结束":
