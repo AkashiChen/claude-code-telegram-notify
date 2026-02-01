@@ -24,30 +24,49 @@ check_deps() {
     echo "✅ 依赖检查通过"
 }
 
+# 设置虚拟环境
+setup_venv() {
+    cd "$PROJECT_DIR/server"
+
+    if [ ! -d ".venv" ]; then
+        echo "   创建虚拟环境..."
+        python3 -m venv .venv
+    fi
+
+    source .venv/bin/activate
+    pip install -q -r requirements.txt 2>/dev/null || true
+}
+
 # 运行 Python 单元测试
 test_python() {
     echo ""
     echo "🐍 运行 Python 单元测试..."
 
     cd "$PROJECT_DIR/server"
-
-    # 安装依赖
-    pip install -q -r requirements.txt 2>/dev/null || true
+    setup_venv
 
     PYTHONPATH=src pytest tests/ -v --tb=short
 
     echo "✅ Python 测试全部通过"
 }
 
-# 启动 Mock Server
+# 启动 Mock Server (设置全局 MOCK_PID)
 start_mock_server() {
     echo ""
     echo "🚀 启动 Mock Server..."
 
     cd "$PROJECT_DIR/server"
 
+    # 使用绝对路径启动，避免子 shell 问题
+    VENV_PYTHON="$PROJECT_DIR/server/.venv/bin/python3"
+
+    if [ ! -f "$VENV_PYTHON" ]; then
+        echo "❌ 虚拟环境未找到: $VENV_PYTHON"
+        return 1
+    fi
+
     # 启动服务（后台）
-    PYTHONPATH=src python3 -c "
+    PYTHONPATH=src "$VENV_PYTHON" -c "
 import uvicorn
 from claude_notify.api import create_app
 from claude_notify.store import SessionStore
@@ -68,11 +87,11 @@ if __name__ == '__main__':
     if ! curl -s http://127.0.0.1:18000/health > /dev/null 2>&1; then
         echo "❌ Mock Server 启动失败"
         kill $MOCK_PID 2>/dev/null || true
+        MOCK_PID=""
         return 1
     fi
 
     echo "✅ Mock Server 已启动"
-    echo "$MOCK_PID"
 }
 
 # 测试 API
@@ -177,7 +196,8 @@ main() {
     check_deps
     test_python
 
-    MOCK_PID=$(start_mock_server | tail -1)
+    # start_mock_server 会设置全局 MOCK_PID
+    start_mock_server || exit 1
     test_api
     test_hook_syntax
 
