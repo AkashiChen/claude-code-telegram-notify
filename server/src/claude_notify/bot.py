@@ -1,5 +1,6 @@
 """Telegram Bot for Claude Code notifications."""
 
+import logging
 from datetime import datetime
 from typing import List, Optional, Tuple
 
@@ -15,6 +16,8 @@ from telegram.ext import (
 
 from .models import ActionType, StatusType
 from .store import SessionStore
+
+logger = logging.getLogger(__name__)
 
 
 class TelegramNotifyBot:
@@ -210,35 +213,72 @@ class TelegramNotifyBot:
 
         chat_id = query.message.chat_id if query.message else None
         if not chat_id or not self.is_allowed_chat(chat_id):
+            logger.warning(f"Callback from unauthorized chat: {chat_id}")
             return
 
         data = query.data or ""
         message_id = query.message.message_id if query.message else None
+        logger.info(f"Callback received: data={data}, message_id={message_id}, chat_id={chat_id}")
 
-        # Find session
+        # Find session by message_id (thread_id)
         session = None
         if message_id:
             session = self.store.get_session_by_thread(message_id)
+            logger.info(f"Session lookup by thread {message_id}: {session}")
 
         if not session:
-            await query.edit_message_text("⚠️ Session 已过期")
+            # Try to find by iterating all sessions (fallback)
+            all_sessions = self.store.list_waiting_sessions(chat_id)
+            logger.info(f"Fallback: found {len(all_sessions)} waiting sessions")
+            if all_sessions:
+                session = all_sessions[0]
+                logger.info(f"Using first waiting session: {session.session_id}")
+
+        if not session:
+            logger.warning(f"No session found for callback, message_id={message_id}")
+            await query.edit_message_text(
+                query.message.text + "\n\n⚠️ Session 已过期"
+            )
             return
 
-        if data == "action:done":
+        # Handle different callback types
+        if data == "action:done" or data == "btn:结束":
             self.store.set_reply(session.session_id, "/done", ActionType.DONE)
-            await query.edit_message_text(
-                query.message.text + "\n\n✅ 已结束"
-            )
-        elif data == "action:continue":
+            logger.info(f"Session {session.session_id}: action=done")
+            # Delete the message after completion
+            try:
+                await query.message.delete()
+            except Exception as e:
+                logger.warning(f"Failed to delete message: {e}")
+                await query.edit_message_text("✅ 任务已结束")
+
+        elif data == "action:continue" or data == "btn:继续":
+            logger.info(f"Session {session.session_id}: waiting for input")
             await query.message.reply_text(
                 "💬 请输入要继续执行的指令："
             )
-        elif data == "action:detail":
+        elif data == "action:detail" or data == "btn:查看详情":
             await query.message.reply_text(
                 f"📋 Session: {session.session_id}\n"
                 f"📁 目录: {session.cwd}\n"
                 f"⏱️ 创建: {session.created_at}"
             )
+        elif data.startswith("btn:"):
+            # Handle custom button - treat as continue with button text
+            btn_text = data[4:]  # Remove "btn:" prefix
+            action, reply = self.parse_user_input(btn_text)
+            self.store.set_reply(session.session_id, reply, action)
+            logger.info(f"Session {session.session_id}: custom button '{btn_text}', action={action}")
+
+            if action == ActionType.DONE:
+                try:
+                    await query.message.delete()
+                except Exception:
+                    await query.edit_message_text("✅ 任务已结束")
+            else:
+                await query.edit_message_text(
+                    query.message.text + f"\n\n📨 已发送: {btn_text}"
+                )
 
     async def handle_status(
         self,
