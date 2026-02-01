@@ -4,7 +4,28 @@
 
 set -e
 
+# ============================================================
+# 通知开关检查 (在读取 stdin 之前，避免阻塞)
+# ============================================================
+
+# 方案 A: 环境变量开关
+# 使用方式: TELEGRAM_NOTIFY_ENABLED=0 claude "your task"
+if [ "${TELEGRAM_NOTIFY_ENABLED:-1}" = "0" ]; then
+    cat > /dev/null  # 消费 stdin 避免 broken pipe
+    exit 0
+fi
+
+# 方案 B: 文件锁开关
+# 使用方式: touch ~/.claude/hooks/.no-notify  (禁用)
+#          rm ~/.claude/hooks/.no-notify     (启用)
+if [ -f "$HOME/.claude/hooks/.no-notify" ]; then
+    cat > /dev/null  # 消费 stdin 避免 broken pipe
+    exit 0
+fi
+
+# ============================================================
 # 加载配置
+# ============================================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/.env" ]; then
     source "$SCRIPT_DIR/.env"

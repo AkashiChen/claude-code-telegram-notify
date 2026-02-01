@@ -176,6 +176,31 @@ test_hook_syntax() {
         return 1
     fi
 
+    # 测试方案 A: 环境变量禁用
+    echo -n "   TELEGRAM_NOTIFY_ENABLED=0: "
+    result=$(echo '{"session_id":"test2","stop_hook_active":false,"cwd":"/tmp"}' | \
+        TELEGRAM_NOTIFY_ENABLED=0 bash "$SCRIPT_DIR/telegram-notify.sh" 2>&1) || true
+    if [ -z "$result" ]; then
+        echo "✅ PASS (exit 0, no output)"
+    else
+        echo "❌ FAIL - unexpected output: $result"
+        return 1
+    fi
+
+    # 测试方案 B: 文件锁禁用
+    echo -n "   .no-notify 文件锁: "
+    mkdir -p "$HOME/.claude/hooks"
+    touch "$HOME/.claude/hooks/.no-notify"
+    result=$(echo '{"session_id":"test3","stop_hook_active":false,"cwd":"/tmp"}' | \
+        bash "$SCRIPT_DIR/telegram-notify.sh" 2>&1) || true
+    rm -f "$HOME/.claude/hooks/.no-notify"
+    if [ -z "$result" ]; then
+        echo "✅ PASS (exit 0, no output)"
+    else
+        echo "❌ FAIL - unexpected output: $result"
+        return 1
+    fi
+
     echo "✅ Hook 脚本测试完成"
 }
 

@@ -152,6 +152,42 @@ claude "创建一个 hello.txt 文件"
 # 回复继续或 /done
 ```
 
+## 6. 禁用通知
+
+当你在电脑前主动使用 Claude Code 时，可以临时禁用通知：
+
+### 方式 A: 环境变量 (单次会话)
+
+```bash
+# 启动时禁用通知
+TELEGRAM_NOTIFY_ENABLED=0 claude "帮我重构这个项目"
+```
+
+### 方式 B: 文件锁 (持续禁用)
+
+```bash
+# 禁用通知
+touch ~/.claude/hooks/.no-notify
+
+# 启用通知
+rm ~/.claude/hooks/.no-notify
+```
+
+**推荐**: 添加别名到 `~/.bashrc` 或 `~/.zshrc`:
+
+```bash
+alias notify-off='touch ~/.claude/hooks/.no-notify && echo "🔕 Telegram 通知已禁用"'
+alias notify-on='rm -f ~/.claude/hooks/.no-notify && echo "🔔 Telegram 通知已启用"'
+alias notify-status='[ -f ~/.claude/hooks/.no-notify ] && echo "🔕 通知已禁用" || echo "🔔 通知已启用"'
+```
+
+使用:
+```bash
+notify-off    # 禁用
+notify-on     # 启用
+notify-status # 查看状态
+```
+
 ## 故障排除
 
 ### Hook 不触发
