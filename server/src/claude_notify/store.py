@@ -127,6 +127,22 @@ class SessionStore:
                 session.chat_id = chat_id
                 session.updated_at = datetime.now()
 
+    def add_related_message(self, session_id: str, message_id: int) -> None:
+        """Add a message ID to the session's related messages list."""
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if session and message_id not in session.related_message_ids:
+                session.related_message_ids.append(message_id)
+                session.updated_at = datetime.now()
+
+    def get_related_messages(self, session_id: str) -> list[int]:
+        """Get all related message IDs for a session."""
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if session:
+                return list(session.related_message_ids)
+            return []
+
     def delete_session(self, session_id: str) -> bool:
         """Delete a session."""
         with self._lock:

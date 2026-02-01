@@ -65,6 +65,8 @@ class SessionData(BaseModel):
     action: Optional[ActionType] = None
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
+    # 追踪所有相关消息 ID，用于批量删除
+    related_message_ids: list[int] = Field(default_factory=list)
 
     @property
     def short_id(self) -> str:

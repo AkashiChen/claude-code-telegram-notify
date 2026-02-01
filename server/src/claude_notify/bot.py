@@ -54,21 +54,15 @@ class TelegramNotifyBot:
         """Format notification message."""
         short_id = session_id[:4]
         status_text = self.STATUS_EMOJI.get(status, "📋 通知")
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-        return f"""🤖 Claude Code #{short_id}
+        # 简化目录显示：只显示最后两级
+        cwd_parts = cwd.rstrip('/').split('/')
+        short_cwd = '/'.join(cwd_parts[-2:]) if len(cwd_parts) > 2 else cwd
 
-📁 {cwd}
-⏱️ {timestamp}
+        return f"""{status_text} #{short_id}
+📁 {short_cwd}
 
-━━━━━━━━━━━━━━━━━━━━
-
-{status_text}
-
-📋 摘要:
-{summary}
-
-💬 回复此消息继续对话，或使用按钮操作"""
+{summary}"""
 
     def get_keyboard(
         self,
@@ -76,18 +70,16 @@ class TelegramNotifyBot:
     ) -> InlineKeyboardMarkup:
         """Create inline keyboard."""
         if buttons:
-            keyboard = [
-                [InlineKeyboardButton(btn, callback_data=f"btn:{btn}")]
+            # 所有按钮放在一行
+            keyboard = [[
+                InlineKeyboardButton(btn, callback_data=f"btn:{btn}")
                 for btn in buttons
-            ]
+            ]]
         else:
-            keyboard = [
-                [
-                    InlineKeyboardButton("继续", callback_data="action:continue"),
-                    InlineKeyboardButton("结束", callback_data="action:done"),
-                    InlineKeyboardButton("详情", callback_data="action:detail"),
-                ]
-            ]
+            keyboard = [[
+                InlineKeyboardButton("继续", callback_data="action:continue"),
+                InlineKeyboardButton("结束", callback_data="action:done"),
+            ]]
         return InlineKeyboardMarkup(keyboard)
 
     def parse_user_input(self, text: str) -> Tuple[ActionType, str]:
@@ -188,20 +180,27 @@ class TelegramNotifyBot:
         if session.chat_id == 0:
             self.store.update_chat_id(session.session_id, chat_id)
 
+        # 追踪用户回复消息 ID
+        if update.message.message_id:
+            self.store.add_related_message(session.session_id, update.message.message_id)
+
         # Parse and store reply
         text = update.message.text or ""
         action, reply = self.parse_user_input(text)
         self.store.set_reply(session.session_id, reply, action)
 
-        # Send confirmation
+        # Send confirmation and track the confirmation message
         if action == ActionType.DONE:
-            await update.message.reply_text("✅ 任务已结束")
+            msg = await update.message.reply_text("✅ 任务已结束")
+            self.store.add_related_message(session.session_id, msg.message_id)
         elif action == ActionType.CANCEL:
-            await update.message.reply_text("❌ 任务已取消")
+            msg = await update.message.reply_text("❌ 任务已取消")
+            self.store.add_related_message(session.session_id, msg.message_id)
         else:
-            await update.message.reply_text(
-                f"📨 已发送到 Claude (Session: #{session.short_id})"
+            msg = await update.message.reply_text(
+                f"📨 已发送到 Claude (#{session.short_id})"
             )
+            self.store.add_related_message(session.session_id, msg.message_id)
 
     async def handle_callback(
         self,
@@ -253,24 +252,47 @@ class TelegramNotifyBot:
         if data == "action:done" or data == "btn:结束":
             self.store.set_reply(session.session_id, "/done", ActionType.DONE)
             logger.info(f"Session {session.session_id}: action=done")
-            # Delete the message after completion
+
+            # 删除所有相关消息（原始通知、用户回复、确认消息等）
+            deleted_count = 0
+            # 先删除原始通知消息
             try:
                 await query.message.delete()
+                deleted_count += 1
             except Exception as e:
-                logger.warning(f"Failed to delete message: {e}")
-                await query.edit_message_text("✅ 任务已结束")
+                logger.warning(f"Failed to delete notification message: {e}")
+
+            # 删除所有追踪的相关消息
+            related_ids = self.store.get_related_messages(session.session_id)
+            for msg_id in related_ids:
+                try:
+                    await self.app.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                    deleted_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to delete message {msg_id}: {e}")
+
+            logger.info(f"Session {session.session_id}: deleted {deleted_count} messages")
+
+            # Delete session from store
+            self.store.delete_session(session.session_id)
+            logger.info(f"Session {session.session_id}: session deleted")
 
         elif data == "action:continue" or data == "btn:继续":
             logger.info(f"Session {session.session_id}: waiting for input")
-            await query.message.reply_text(
+            msg = await query.message.reply_text(
                 "💬 请输入要继续执行的指令："
             )
+            # 追踪这条提示消息
+            self.store.add_related_message(session.session_id, msg.message_id)
+
         elif data == "action:detail" or data == "btn:查看详情":
-            await query.message.reply_text(
+            msg = await query.message.reply_text(
                 f"📋 Session: {session.session_id}\n"
                 f"📁 目录: {session.cwd}\n"
                 f"⏱️ 创建: {session.created_at}"
             )
+            self.store.add_related_message(session.session_id, msg.message_id)
+
         elif data.startswith("btn:"):
             # Handle custom button - treat as continue with button text
             btn_text = data[4:]  # Remove "btn:" prefix
@@ -279,10 +301,22 @@ class TelegramNotifyBot:
             logger.info(f"Session {session.session_id}: custom button '{btn_text}', action={action}")
 
             if action == ActionType.DONE:
+                # 删除所有相关消息
+                deleted_count = 0
                 try:
                     await query.message.delete()
+                    deleted_count += 1
                 except Exception:
-                    await query.edit_message_text("✅ 任务已结束")
+                    pass
+                related_ids = self.store.get_related_messages(session.session_id)
+                for msg_id in related_ids:
+                    try:
+                        await self.app.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                        deleted_count += 1
+                    except Exception:
+                        pass
+                logger.info(f"Session {session.session_id}: deleted {deleted_count} messages")
+                self.store.delete_session(session.session_id)
             else:
                 await query.edit_message_text(
                     query.message.text + f"\n\n📨 已发送: {btn_text}"

@@ -31,10 +31,10 @@ def test_format_message_completed(bot):
         summary="Task completed successfully",
         cwd="/home/user/project",
     )
-    assert "🤖 Claude Code #abc1" in msg
     assert "✅ 任务完成" in msg
+    assert "#abc1" in msg
     assert "Task completed successfully" in msg
-    assert "/home/user/project" in msg
+    assert "user/project" in msg  # 简化后只显示最后两级目录
 
 
 def test_format_message_permission(bot):
