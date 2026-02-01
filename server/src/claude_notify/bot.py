@@ -87,7 +87,7 @@ class TelegramNotifyBot:
         text = text.strip()
         if text.lower() in ["/done", "done", "结束"]:
             return ActionType.DONE, text
-        elif text.lower() in ["/cancel", "cancel", "取消"]:
+        elif text.lower() in ["/cancel", "cancel", "取消", "no", "拒绝"]:
             return ActionType.CANCEL, text
         else:
             return ActionType.CONTINUE, text

@@ -105,6 +105,26 @@ generate_summary() {
 
 SUMMARY=$(generate_summary)
 
+# 根据状态类型生成按钮
+generate_buttons() {
+    case "$STATUS" in
+        permission)
+            # 权限请求：允许/拒绝按钮
+            echo '["yes", "no"]'
+            ;;
+        idle)
+            # 空闲等待：继续/结束按钮
+            echo '["继续", "结束"]'
+            ;;
+        *)
+            # 任务完成：默认按钮（由服务端处理）
+            echo 'null'
+            ;;
+    esac
+}
+
+BUTTONS=$(generate_buttons)
+
 # 发送通知
 send_notify() {
     local response
@@ -116,7 +136,8 @@ send_notify() {
             \"session_id\": \"${SESSION_ID}\",
             \"status\": \"${STATUS}\",
             \"summary\": $(echo "$SUMMARY" | jq -Rs .),
-            \"cwd\": \"${CWD}\"
+            \"cwd\": \"${CWD}\",
+            \"buttons\": ${BUTTONS}
         }" 2>/dev/null)
 
     local http_code=$(echo "$response" | tail -1)

@@ -69,10 +69,31 @@ def test_parse_action_cancel(bot):
     assert reply == "/cancel"
 
 
+def test_parse_action_cancel_no(bot):
+    """Test 'no' is treated as cancel (for permission denial)."""
+    action, reply = bot.parse_user_input("no")
+    assert action == ActionType.CANCEL
+    assert reply == "no"
+
+
+def test_parse_action_cancel_reject(bot):
+    """Test '拒绝' is treated as cancel."""
+    action, reply = bot.parse_user_input("拒绝")
+    assert action == ActionType.CANCEL
+    assert reply == "拒绝"
+
+
 def test_parse_action_continue(bot):
     action, reply = bot.parse_user_input("请添加测试")
     assert action == ActionType.CONTINUE
     assert reply == "请添加测试"
+
+
+def test_parse_action_continue_yes(bot):
+    """Test 'yes' is treated as continue (for permission approval)."""
+    action, reply = bot.parse_user_input("yes")
+    assert action == ActionType.CONTINUE
+    assert reply == "yes"
 
 
 def test_is_allowed_chat(bot):
